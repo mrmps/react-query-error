@@ -10,9 +10,11 @@ This repository demonstrates that behavior without any third-party data-fetching
 
 ## Stack
 
-- **next**: 14.2.3 (or latest stable)
-- **react**: 18.3.1 (or latest stable)
-- **@tanstack/react-query**: 5.x.x (latest stable)
+- **next**: 16.0.1 (latest)
+- **react**: 19.2.0 (latest)
+- **@tanstack/react-query**: 5.62.7 (latest)
+
+Was able to reproduce on Next 14 as well.
 
 ## Steps to Reproduce
 
@@ -28,15 +30,25 @@ This repository demonstrates that behavior without any third-party data-fetching
 
 ### `app/problem-page/page.tsx`
 
-This is the core of the reproduction. It contains the `useQuery` hook with the custom `queryFn` that simulates the problematic behavior:
+This is the core of the reproduction. It contains the `useQuery` hook with a `queryFn` that makes a fetch request:
+
+```typescript
+const problematicQueryFn = async ({ signal }: QueryFunctionContext) => {
+  const res = await fetch("https://api.github.com/repos/tanstack/query", {
+    signal,
+  });
+  if (!res.ok) {
+    throw new Error("Network response was not ok");
+  }
+  return res.json();
+};
+```
+
+**Note:** The issue is more pronounced when the `queryFn` includes error handling that logs the `AbortError`:
 
 ```typescript
 const problematicQueryFn = async ({ signal }: QueryFunctionContext) => {
   try {
-    // Simulate a network request that takes 3 seconds
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-    
-    // Pass the signal to a real fetch call
     const res = await fetch("https://api.github.com/repos/tanstack/query", {
       signal,
     });
@@ -45,17 +57,11 @@ const problematicQueryFn = async ({ signal }: QueryFunctionContext) => {
     }
     return res.json();
   } catch (error: any) {
-    // This is the key part of the reproduction.
-    // We catch the AbortError...
+    // When libraries catch and log the AbortError, it triggers the Next.js overlay
     if (error.name === "AbortError") {
-      // ...and then log it, which triggers the Next.js overlay.
-      console.error(
-        "Caught and logged AbortError inside queryFn:",
-        error
-      );
+      console.error("Caught and logged AbortError inside queryFn:", error);
     }
-    // We must re-throw the error for TanStack Query to know it failed.
-    throw error;
+    throw error; // Re-throw for TanStack Query
   }
 };
 ```
@@ -64,8 +70,8 @@ const problematicQueryFn = async ({ signal }: QueryFunctionContext) => {
 
 1. **React Strict Mode** (enabled in `next.config.js`) causes components to mount → unmount → remount in development.
 2. When the component unmounts, **TanStack Query cancels** the in-flight query by aborting the signal.
-3. The `queryFn` catches the `AbortError` and **logs it with `console.error`**.
-4. **Next.js's error overlay** intercepts `console.error` calls in development and treats them as unhandled errors, even though the promise chain is properly handled.
+3. If the `queryFn` (or any library wrapping it) catches the `AbortError` and **logs it with `console.error`**, the **Next.js error overlay** intercepts these calls and treats them as unhandled errors, even though the promise chain is properly handled.
+4. Even without explicit error logging, unhandled promise rejections from `AbortError` can trigger the overlay in certain configurations.
 
 ## Expected vs. Actual Behavior
 
