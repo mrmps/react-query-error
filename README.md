@@ -95,7 +95,7 @@ Error: AbortError: signal is aborted without reason
 
 Is there a recommended way to handle `AbortError` in custom `queryFn` implementations that prevents this Next.js overlay issue while still properly propagating cancellation to TanStack Query's internal state management?
 
-Should libraries that wrap `fetch` (like tRPC, oRPC, etc.) avoid logging `AbortError` altogether, or is this a Next.js development server issue that should be addressed upstream?
+In production I'm using oRPC + Tanstack Query, but I think solving this example should solve my production issue.
 
 ## Additional Context
 
